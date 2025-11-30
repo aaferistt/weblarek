@@ -1,5 +1,5 @@
 // src/components/Card.ts
-import { Component } from './base/component';
+import { Component } from './base/Component';
 import { ensureElement, handlePrice } from '../utils/utils';
 import { CDN_URL } from '../utils/constants';
 import { IProduct } from '../types';
@@ -90,6 +90,7 @@ export class Card extends Component<IProduct> {
 
 export class CardPreview extends Card {
   protected _description: HTMLElement;
+  onClick: () => void;
   constructor(container: HTMLElement, actions?: ICardActions) {
     super(container, actions);
     this._description = ensureElement<HTMLElement>('.card__text', container);

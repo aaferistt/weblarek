@@ -1,5 +1,5 @@
 import { handlePrice } from '../utils/utils';
-import { Component } from './base/component';
+import { Component } from './base/Component';
 
 interface ISuccess {
   total: number;

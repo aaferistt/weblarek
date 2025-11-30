@@ -1,9 +1,9 @@
 // src/index.ts
 import './scss/styles.scss';
 
-import { Api } from './components/base/api';
+import { Api } from './components/base/Api';
 import { AppData } from './components/AppData';
-import { EventEmitter } from './components/base/events';
+import { EventEmitter } from './components/base/Events';
 
 import { Card, CardPreview } from './components/Card';
 import { Basket, BasketItem } from './components/Basket';
@@ -23,7 +23,8 @@ const events = new EventEmitter();
 const page = new Page(document.body, events);
 const appData = new AppData(events);
 
-// ---- templates & widgets
+// ---- templates & widgets 
+
 const modal = new Modal(ensureElement<HTMLElement>('#modal-container'), events);
 
 const tplCardCatalog = ensureElement<HTMLTemplateElement>('#card-catalog');
@@ -44,18 +45,22 @@ const successView = new Success(cloneTemplate(tplSuccess), {
   },
 });
 
-// ===== helpers
+const previewView = new CardPreview(cloneTemplate(tplCardPreview), {
+  onClick: () => {
+    console.warn('Preview onClick not initialized');
+  },
+});
 
+// ===== helpers
 function openPreview(item: IProduct) {
-  const preview = new CardPreview(cloneTemplate(tplCardPreview), {
-    onClick: () =>
-      events.emit(item.selected ? 'product:remove' : 'product:add', {
-        productId: item.id,
-      }),
-  });
+  previewView.onClick = () => {
+    events.emit(item.selected ? 'product:remove' : 'product:add', {
+      productId: item.id,
+    });
+  };
 
   modal.render({
-    content: preview.render({
+    content: previewView.render({
       id: item.id,
       title: item.title,
       image: item.image,
@@ -94,70 +99,12 @@ events.onAll((e) => console.log('[event]', e));
 api
   .get('/product')
   .then((res: IProductResponse) => {
-    console.log('[api]/product ok:', res);
     const items = Array.isArray(res?.items) ? res.items : [];
-    if (!items.length) {
-      console.warn('[api] пусто — рендерю моки');
-      const mocks: IProduct[] = [
-        {
-          id: 'm1',
-          title: 'Моковый товар 1',
-          description: 'Описание 1',
-          image: '/images/Subtract.svg',
-          category: 'другое',
-          price: 750,
-          selected: false,
-        },
-        {
-          id: 'm2',
-          title: 'Моковый товар 2',
-          description: 'Описание 2',
-          image: '/images/Subtract.svg',
-          category: 'софт-скил',
-          price: 1000,
-          selected: false,
-        },
-        {
-          id: 'm3',
-          title: 'Моковый товар 3',
-          description: 'Описание 3',
-          image: '/images/Subtract.svg',
-          category: 'хард-скил',
-          price: null,
-          selected: false,
-        },
-      ];
-      appData.setProducts(mocks);
-      console.log('AppData catalog length:', appData.catalog.length);
-    } else {
-      appData.setProducts(items);
-      console.log('AppData catalog length:', appData.catalog.length);
-    }
+    appData.setProducts(items);
   })
   .catch((err) => {
     console.error('[api]/product error:', err);
-    const mocks: IProduct[] = [
-      {
-        id: 'm1',
-        title: 'Моковый товар 1',
-        description: 'Описание 1',
-        image: '/images/Subtract.svg',
-        category: 'другое',
-        price: 750,
-        selected: false,
-      },
-      {
-        id: 'm2',
-        title: 'Моковый товар 2',
-        description: 'Описание 2',
-        image: '/images/Subtract.svg',
-        category: 'софт-скил',
-        price: 1000,
-        selected: false,
-      },
-    ];
-    appData.setProducts(mocks);
-    console.log('AppData catalog length:', appData.catalog.length);
+    appData.setProducts([]);
   });
 
 // ===== Events wiring
@@ -183,43 +130,39 @@ events.on('catalog:loaded', (data: { products: IProduct[] }) => {
 // открыть карточку товара
 events.on('product:open', ({ productId }: { productId: string }) => {
   const item = appData.catalog.find((p) => p.id === productId);
-  if (item) openPreview(item);
+  appData.setSelectedProduct(item || null); // ← обновляем модель
+});
+
+events.on('selectedProduct:changed', ({ product }: { product: IProduct | null }) => {
+  if (product) {
+    openPreview(product);
+  }
 });
 
 // добавить в корзину
 events.on('product:add', ({ productId }: { productId: string }) => {
-  console.log('📥 product:add вызван с productId =', productId, typeof productId);
-  
-  const catalogIds = appData.catalog.map(p => ({ id: p.id, type: typeof p.id }));
-  console.log('📋 Все ID в каталоге:', catalogIds);
-
-  const item = appData.catalog.find((p) => p.id === productId);
-  console.log('🔍 Найден товар?', item);
-
-  if (!item) {
-    console.warn('⚠️ Товар НЕ НАЙДЕН в каталоге по ID:', productId);
-    return;
-  }
+  const item = appData.catalog.find(p => p.id === productId);
+  if (!item) return;
 
   item.selected = true;
-  appData.addToBasket([item]);
+  appData.addToBasket(item);
   page.counter = appData.getBasketAmount();
-  openPreview(item);
+  modal.close();
 });
 
 // удалить из корзины
 events.on('product:remove', ({ productId }: { productId: string }) => {
-  const item = appData.catalog.find((p) => p.id === productId);
+    const item = appData.catalog.find(p => p.id === productId);
   if (!item) return;
+
   item.selected = false;
-  appData.deleteFromBasket([item]);
+  appData.deleteFromBasket(item);
   page.counter = appData.getBasketAmount();
-  openPreview(item);
+  modal.close();
 });
 
 // открыть корзину
 events.on('cart:open', () => {
-  renderBasketList();
   modal.render({
   content: basketView.render({
     total: appData.getTotalBasketPrice(),
@@ -270,13 +213,12 @@ events.on('order:submit', () => {
 // сабмит шага 2 -> отправка заказа
 events.on('contacts:submit', () => {
   const dto: OrderRequestDTO = appData.toOrderRequest();
-  api
-    .post('/order', dto)
+  api.post('/order', dto)
     .then((res: { orderId: string; total?: number }) => {
       events.emit('order:completed', { orderId: res.orderId });
       modal.render({
         content: successView.render({
-          total: appData.getTotalBasketPrice(),
+          total: res.total ?? appData.getTotalBasketPrice(), // fallback на случай, если сервер не прислал
         }),
       });
       appData.clearOrderData();

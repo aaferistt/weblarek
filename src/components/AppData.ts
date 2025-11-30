@@ -9,7 +9,7 @@ import {
   CartState,
 } from '../types';
 import { Model } from './base/Model';
-import { IEvents } from './base/events';
+import { IEvents } from './base/Events';
 
 const EMPTY_ORDER: IOrder = {
   payment: 'card' as PaymentMethod,
@@ -25,6 +25,7 @@ export class AppData extends Model<IAppData> implements IAppData {
   basket: IProduct[] = [];
   order: IOrder = { ...EMPTY_ORDER };
   formErrors: FormErrors = {};
+  selectedProduct: IProduct | null = null;
 
   constructor(events: IEvents) {
     super(events);
@@ -36,14 +37,15 @@ export class AppData extends Model<IAppData> implements IAppData {
     return this.basket.reduce((sum, next) => sum + (next.price ?? 0), 0);
   }
 
-  addToBasket(values: IProduct[]): void {
-    this.basket.push(...values);
+  addToBasket(product: IProduct): void {
+    if (!this.basket.some(item => item.id === product.id)) {
+      this.basket.push(product);
+    }
     this.emitChanges('cart:changed', { state: this.getCartState() });
   }
 
-  deleteFromBasket(values: IProduct[]): void {
-    const ids = values.map((v) => v.id);
-    this.basket = this.basket.filter((item) => !ids.includes(item.id));
+  deleteFromBasket(product: IProduct): void {
+    this.basket = this.basket.filter(item => item.id !== product.id);
     this.emitChanges('cart:changed', { state: this.getCartState() });
   }
 
@@ -53,22 +55,22 @@ export class AppData extends Model<IAppData> implements IAppData {
 
   private clearBasket(): void {
     this.basket.length = 0;
-    this.emitChanges('cart:cleared'); // payload не обязателен
+    this.emitChanges('cart:cleared'); 
     this.emitChanges('cart:changed', { state: this.getCartState() });
   }
 
   private getCartState(): CartState {
-    return {
-      items: this.basket.map((p) => ({
-        id: p.id,
-        title: p.title,
-        price: p.price ?? 0,
-        count: 1,
-      })),
-      total: this.getTotalBasketPrice(),
-      count: this.getBasketAmount(),
-    };
-  }
+  return {
+    items: this.basket.map(p => ({
+      id: p.id,
+      title: p.title,
+      price: p.price ?? 0,
+      count: 1,
+    })),
+    total: this.getTotalBasketPrice(),
+    count: this.getBasketAmount(),
+  };
+}
 
   // ===== Каталог =====
 
@@ -109,6 +111,11 @@ export class AppData extends Model<IAppData> implements IAppData {
     this.clearBasket();
     this.order = { ...EMPTY_ORDER };
     this.formErrors = {};
+  }
+
+  setSelectedProduct(product: IProduct | null): void {
+    this.selectedProduct = product;
+    this.emitChanges('selectedProduct:changed', { product });
   }
 
   // DTO для API

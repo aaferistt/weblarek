@@ -1,6 +1,6 @@
 import { createElement, ensureElement, handlePrice } from '../utils/utils';
-import { Component } from './base/component';
-import { IEvents } from './base/events';
+import { Component } from './base/Component';
+import { IEvents } from './base/Events';
 import { IProduct } from '../types';
 
 interface IBasketViewState {

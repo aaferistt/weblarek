@@ -248,8 +248,8 @@ export interface IAppData {
 	order: IOrder;
 	formErrors: FormErrors;
 	getTotalBasketPrice(): number;
-	addToBasket(value: IProduct[]): void;
-	deleteFromBasket(value: IProduct[]): void;
+	addToBasket(product: IProduct): void;
+	deleteFromBasket(product: IProduct): void;
 	getBasketAmount(): number;
 	setProducts(items: IProduct[]): void;
 	setOrderField(field: keyof IOrderForm, value: string): void;
