@@ -1,4 +1,9 @@
-type ApiPostMethods = 'POST' | 'PUT' | 'DELETE';
+export type ApiListResponse<Type> = {
+    total: number,
+    items: Type[]
+};
+
+export type ApiPostMethods = 'POST' | 'PUT' | 'DELETE';
 
 export class Api {
     readonly baseUrl: string;
@@ -14,24 +19,24 @@ export class Api {
         };
     }
 
-    protected handleResponse<T>(response: Response): Promise<T> {
+    protected handleResponse(response: Response): Promise<object> {
         if (response.ok) return response.json();
         else return response.json()
             .then(data => Promise.reject(data.error ?? response.statusText));
     }
 
-    get<T extends object>(uri: string) {
+    get(uri: string) {
         return fetch(this.baseUrl + uri, {
             ...this.options,
             method: 'GET'
-        }).then(this.handleResponse<T>);
+        }).then(this.handleResponse);
     }
 
-    post<T extends object>(uri: string, data: object, method: ApiPostMethods = 'POST') {
+    post(uri: string, data: object, method: ApiPostMethods = 'POST') {
         return fetch(this.baseUrl + uri, {
             ...this.options,
             method,
             body: JSON.stringify(data)
-        }).then(this.handleResponse<T>);
+        }).then(this.handleResponse);
     }
 }
