@@ -83,8 +83,8 @@ export class AppData extends Model<IAppData> implements IAppData {
 
   setOrderField<K extends keyof IOrderForm>(field: K, value: IOrderForm[K]): void {
     this.order = { ...this.order, [field]: value } as IOrder;
-    this.validateOrder();    // шаг 1: payment + address
-    this.validateContacts(); // шаг 2: email + phone
+    this.validateOrder();
+    this.validateContacts();
   }
 
   validateContacts(): void {
