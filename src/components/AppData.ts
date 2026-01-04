@@ -31,97 +31,146 @@ export class AppData extends Model<IAppData> implements IAppData {
     super(events);
   }
 
-  // ===== Корзина =====
+  // ================== КОРЗИНА ==================
 
   getTotalBasketPrice(): number {
-    return this.basket.reduce((sum, next) => sum + (next.price ?? 0), 0);
-  }
-
-  addToBasket(product: IProduct): void {
-    if (!this.basket.some(item => item.id === product.id)) {
-      this.basket.push(product);
-    }
-    this.emitChanges('cart:changed', { state: this.getCartState() });
-  }
-
-  deleteFromBasket(product: IProduct): void {
-    this.basket = this.basket.filter(item => item.id !== product.id);
-    this.emitChanges('cart:changed', { state: this.getCartState() });
+    return this.basket.reduce((sum, p) => sum + (p.price ?? 0), 0);
   }
 
   getBasketAmount(): number {
     return this.basket.length;
   }
 
+  addToBasket(product: IProduct): void {
+    if (!this.basket.some((p) => p.id === product.id)) {
+      this.basket.push(product);
+    }
+    this.emitChanges('cart:changed', { state: this.getCartState() });
+  }
+
+  deleteFromBasket(product: IProduct): void {
+    this.basket = this.basket.filter((p) => p.id !== product.id);
+    this.emitChanges('cart:changed', { state: this.getCartState() });
+  }
+
   private clearBasket(): void {
     this.basket.length = 0;
-    this.emitChanges('cart:cleared'); 
+    this.emitChanges('cart:cleared');
     this.emitChanges('cart:changed', { state: this.getCartState() });
   }
 
   private getCartState(): CartState {
-  return {
-    items: this.basket.map(p => ({
-      id: p.id,
-      title: p.title,
-      price: p.price ?? 0,
-      count: 1,
-    })),
-    total: this.getTotalBasketPrice(),
-    count: this.getBasketAmount(),
-  };
-}
+    return {
+      items: this.basket.map((p) => ({
+        id: p.id,
+        title: p.title,
+        price: p.price ?? 0,
+        count: 1,
+      })),
+      total: this.getTotalBasketPrice(),
+      count: this.getBasketAmount(),
+    };
+  }
 
-  // ===== Каталог =====
+  // ================== КАТАЛОГ ==================
 
   setProducts(items: IProduct[]): void {
     this.catalog = items;
     this.emitChanges('catalog:loaded', { products: this.catalog });
   }
 
-  // ===== Заказ / валидация =====
+  // ================== SELECTED PRODUCT ==================
 
-  setOrderField<K extends keyof IOrderForm>(field: K, value: IOrderForm[K]): void {
+  setSelectedProduct(product: IProduct | null): void {
+    this.selectedProduct = product;
+    this.emitChanges('selectedProduct:changed', {});
+  }
+
+  getSelectedProduct(): IProduct | null {
+    return this.selectedProduct;
+  }
+
+  // ================== ОШИБКИ ФОРМЫ ==================
+
+  private setFormErrors(errors: FormErrors): void {
+    this.formErrors = errors;
+    this.emitChanges('formErrors:changed', { errors: this.formErrors });
+  }
+
+  /**
+   * Обновляет ошибки конкретной группы полей,
+   * предварительно очищая старые ошибки этой группы
+   */
+  private updateErrors(
+    keys: (keyof IOrderForm)[],
+    newErrors: FormErrors
+  ): void {
+    const next: FormErrors = { ...this.formErrors };
+    keys.forEach((key) => delete next[key]);
+    Object.assign(next, newErrors);
+    this.setFormErrors(next);
+  }
+
+  // ================== ЗАКАЗ / ВАЛИДАЦИЯ ==================
+
+  setOrderField<K extends keyof IOrderForm>(
+    field: K,
+    value: IOrderForm[K]
+  ): void {
     this.order = { ...this.order, [field]: value } as IOrder;
+
+    // валидируем оба шага — это безопасно
     this.validateOrder();
     this.validateContacts();
   }
 
-  validateContacts(): void {
-    const errors: typeof this.formErrors = {};
-    if (!this.order.email) errors.email = 'Необходимо указать email';
-    if (!this.order.phone) errors.phone = 'Необходимо указать телефон';
-
-    this.formErrors = { ...this.formErrors, ...errors };
-    const valid = !errors.email && !errors.phone;
-    this.emitChanges('order:step-valid', { step: 2, valid });
-  }
-
   validateOrder(): void {
-    const errors: typeof this.formErrors = {};
-    if (!this.order.address) errors.address = 'Необходимо указать адрес';
-    if (!this.order.payment) errors.payment = 'Необходимо указать способ оплаты';
+    const errors: FormErrors = {};
 
-    this.formErrors = { ...this.formErrors, ...errors };
+    if (!this.order.address) {
+      errors.address = 'Необходимо указать адрес';
+    }
+
+    if (!this.order.payment) {
+      errors.payment = 'Необходимо указать способ оплаты';
+    }
+
+    this.updateErrors(['address', 'payment'], errors);
+
     const valid = !errors.address && !errors.payment;
     this.emitChanges('order:step-valid', { step: 1, valid });
+  }
+
+  validateContacts(): void {
+    const errors: FormErrors = {};
+
+    if (!this.order.email) {
+      errors.email = 'Необходимо указать email';
+    }
+
+    if (!this.order.phone) {
+      errors.phone = 'Необходимо указать телефон';
+    }
+
+    this.updateErrors(['email', 'phone'], errors);
+
+    const valid = !errors.email && !errors.phone;
+    this.emitChanges('order:step-valid', { step: 2, valid });
   }
 
   clearOrderData(): void {
     this.clearBasket();
     this.order = { ...EMPTY_ORDER };
-    this.formErrors = {};
+    this.setFormErrors({});
+    this.selectedProduct = null;
   }
 
-  setSelectedProduct(product: IProduct | null): void {
-    this.selectedProduct = product;
-    this.emitChanges('selectedProduct:changed', { product });
-  }
+  // ================== DTO ДЛЯ API ==================
 
-  // DTO для API
   toOrderRequest(): OrderRequestDTO {
     return {
-      items: this.basket.map((p) => ({ id: p.id, quantity: 1 })),
+      // по ревью: ТОЛЬКО массив id
+      items: this.basket.map((p) => p.id),
       payment: this.order.payment,
       address: this.order.address,
       email: this.order.email,

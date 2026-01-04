@@ -53,13 +53,15 @@ export interface ProductDTO {
 	price: number | null;
 }
 
+// Оставляем, если где-то используется, но в OrderRequestDTO больше не нужно
 export interface OrderItemDTO {
 	id: ProductId;
 	quantity: number;
 }
 
+// По ревью: items — только массив id
 export interface OrderRequestDTO {
-	items: OrderItemDTO[];
+	items: ProductId[];
 	payment: PaymentMethod;
 	address: string;
 	email: string;
@@ -205,19 +207,20 @@ export interface AppEventMap {
 	'checkout:pay': { order: OrderRequestDTO };
 	'order:step-valid': { step: 1 | 2; valid: boolean };
 	'order:completed': { orderId: Id<'order'> };
+
+	// ошибки формы
+	'formErrors:changed': { errors: FormErrors };
+
+	// отдельное удаление из корзины (без закрытия модалки)
+	'basket:remove': { productId: ProductId };
+
 	'modal:open': { content: HTMLElement; title?: string };
 	'modal:close': void;
 }
 
 export interface IEventEmitter<Events = AppEventMap> {
-	on<K extends keyof Events>(
-		event: K,
-		handler: (payload: Events[K]) => void
-	): void;
-	off<K extends keyof Events>(
-		event: K,
-		handler: (payload: Events[K]) => void
-	): void;
+	on<K extends keyof Events>(event: K, handler: (payload: Events[K]) => void): void;
+	off<K extends keyof Events>(event: K, handler: (payload: Events[K]) => void): void;
 	emit<K extends keyof Events>(event: K, payload: Events[K]): void;
 }
 

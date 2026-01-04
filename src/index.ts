@@ -13,7 +13,13 @@ import { Page } from './components/Page';
 import { Modal } from './components/Modal';
 
 import { ensureElement, cloneTemplate } from './utils/utils';
-import { IOrderForm, IProduct, IProductResponse, OrderRequestDTO } from './types';
+import {
+  FormErrors,
+  IOrderForm,
+  IProduct,
+  IProductResponse,
+  OrderRequestDTO,
+} from './types';
 import { API_URL } from './utils/constants';
 
 // ---- core singletons
@@ -42,32 +48,43 @@ const successView = new Success(cloneTemplate(tplSuccess), {
   },
 });
 
+// По ревью: CardPreview создаём ОДИН раз
+const previewView = new CardPreview(cloneTemplate(tplCardPreview), {
+  onClick: () => {
+    const product = appData.getSelectedProduct();
+    if (!product) return;
+
+    if (product.selected) {
+      events.emit('product:remove', { productId: product.id });
+    } else {
+      events.emit('product:add', { productId: product.id });
+    }
+  },
+});
 
 // ===== helpers
 
-function openPreview(item: IProduct) {
-  const previewView = new CardPreview(cloneTemplate(tplCardPreview), {
-    onClick: () => {
-      const currentProduct = appData.catalog.find(p => p.id === item.id);
-      if (!currentProduct) return;
+function getStep1Errors(errors: FormErrors): string[] {
+  return [errors.address, errors.payment].filter(Boolean) as string[];
+}
 
-      if (currentProduct.selected) {
-        events.emit('product:remove', { productId: currentProduct.id });
-      } else {
-        events.emit('product:add', { productId: currentProduct.id });
-      }
-    },
-  });
+function getStep2Errors(errors: FormErrors): string[] {
+  return [errors.email, errors.phone].filter(Boolean) as string[];
+}
+
+function openPreview() {
+  const product = appData.getSelectedProduct();
+  if (!product) return;
 
   modal.render({
     content: previewView.render({
-      id: item.id,
-      title: item.title,
-      image: item.image,
-      category: item.category,
-      description: item.description,
-      price: item.price,
-      selected: item.selected,
+      id: product.id,
+      title: product.title,
+      image: product.image,
+      category: product.category,
+      description: product.description,
+      price: product.price,
+      selected: product.selected,
     }),
   });
 }
@@ -75,7 +92,8 @@ function openPreview(item: IProduct) {
 function renderBasketList() {
   const items = appData.basket.map((item, index) => {
     const view = new BasketItem(cloneTemplate(tplBasketItem), {
-      onClick: () => events.emit('product:remove', { productId: item.id }),
+      // По ревью: удаление в корзине НЕ должно закрывать окно
+      onClick: () => events.emit('basket:remove', { productId: item.id }),
     });
     return view.render({
       title: item.title,
@@ -126,22 +144,19 @@ events.on('catalog:loaded', ({ products }: { products: IProduct[] }) => {
   });
 });
 
-
 events.on('product:open', ({ productId }: { productId: string }) => {
   const item = appData.catalog.find((p) => p.id === productId);
   appData.setSelectedProduct(item || null);
 });
 
-events.on('selectedProduct:changed', ({ product }: { product: IProduct | null }) => {
-  if (product) {
-    openPreview(product);
-  }
+events.on('selectedProduct:changed', () => {
+  openPreview();
 });
 
-// ———— ДОБАВЛЕНИЕ / УДАЛЕНИЕ ————
+// ———— ДОБАВЛЕНИЕ / УДАЛЕНИЕ (превью) ————
 
 events.on('product:add', ({ productId }: { productId: string }) => {
-  const item = appData.catalog.find(p => p.id === productId);
+  const item = appData.catalog.find((p) => p.id === productId);
   if (!item) return;
 
   item.selected = true;
@@ -150,7 +165,7 @@ events.on('product:add', ({ productId }: { productId: string }) => {
 });
 
 events.on('product:remove', ({ productId }: { productId: string }) => {
-  const item = appData.catalog.find(p => p.id === productId);
+  const item = appData.catalog.find((p) => p.id === productId);
   if (!item) return;
 
   item.selected = false;
@@ -163,13 +178,25 @@ events.on('product:remove', ({ productId }: { productId: string }) => {
 events.on('cart:open', () => {
   renderBasketList();
   modal.render({
-    content: basketView.render(), 
+    content: basketView.render(),
   });
 });
 
 events.on('cart:changed', () => {
   renderBasketList();
-  page.counter = appData.getBasketAmount(); 
+  page.counter = appData.getBasketAmount();
+});
+
+// Отдельное удаление из корзины (НЕ закрывает модалку)
+events.on('basket:remove', ({ productId }: { productId: string }) => {
+  const item = appData.catalog.find((p) => p.id === productId);
+  if (!item) return;
+
+  item.selected = false;
+  appData.deleteFromBasket(item);
+
+  // модалку не трогаем, просто обновляем список
+  renderBasketList();
 });
 
 // ———— ЗАКАЗ ————
@@ -179,7 +206,7 @@ events.on('checkout:open-step1', () => {
     content: orderView.render({
       address: appData.order.address || '',
       valid: false,
-      errors: [],
+      errors: getStep1Errors(appData.formErrors),
     }),
   });
 });
@@ -189,12 +216,25 @@ events.on('order:step-valid', ({ step, valid }: { step: 1 | 2; valid: boolean })
   if (step === 2) contactsView.valid = valid;
 });
 
-events.on(
-  'orderInput:change',
-  ({ field, value }: { field: keyof IOrderForm; value: string }) => {
-    appData.setOrderField(field, value);
-  }
-);
+// По ревью: ошибки формы должны отображаться
+events.on('formErrors:changed', ({ errors }: { errors: FormErrors }) => {
+  orderView.render({
+    address: appData.order.address || '',
+    valid: orderView.valid,
+    errors: getStep1Errors(errors),
+  });
+
+  contactsView.render({
+    email: appData.order.email || '',
+    phone: appData.order.phone || '',
+    valid: contactsView.valid,
+    errors: getStep2Errors(errors),
+  });
+});
+
+events.on('orderInput:change', ({ field, value }: { field: keyof IOrderForm; value: string }) => {
+  appData.setOrderField(field, value);
+});
 
 events.on('order:submit', () => {
   modal.render({
@@ -202,7 +242,7 @@ events.on('order:submit', () => {
       email: appData.order.email || '',
       phone: appData.order.phone || '',
       valid: false,
-      errors: [],
+      errors: getStep2Errors(appData.formErrors),
     }),
   });
 });
