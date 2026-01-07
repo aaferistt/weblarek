@@ -95,6 +95,7 @@ function renderBasketList() {
       // По ревью: удаление в корзине НЕ должно закрывать окно
       onClick: () => events.emit('basket:remove', { productId: item.id }),
     });
+
     return view.render({
       title: item.title,
       price: item.price ?? 0,
@@ -132,6 +133,7 @@ events.on('catalog:loaded', ({ products }: { products: IProduct[] }) => {
     const card = new Card(cloneTemplate(tplCardCatalog), {
       onClick: () => events.emit('product:open', { productId: item.id }),
     });
+
     return card.render({
       id: item.id,
       title: item.title,
@@ -176,13 +178,14 @@ events.on('product:remove', ({ productId }: { productId: string }) => {
 // ———— КОРЗИНА ————
 
 events.on('cart:open', () => {
-  renderBasketList();
+  // По ревью: обновлять список здесь не нужно — просто render корзины
   modal.render({
     content: basketView.render(),
   });
 });
 
 events.on('cart:changed', () => {
+  // Единственное место, где реально пересобираем список
   renderBasketList();
   page.counter = appData.getBasketAmount();
 });
@@ -193,17 +196,17 @@ events.on('basket:remove', ({ productId }: { productId: string }) => {
   if (!item) return;
 
   item.selected = false;
+  // cart:changed сам всё перерисует и обновит счетчик
   appData.deleteFromBasket(item);
-
-  // модалку не трогаем, просто обновляем список
-  renderBasketList();
 });
 
 // ———— ЗАКАЗ ————
 
 events.on('checkout:open-step1', () => {
+  // По ревью: при открытии обновляем не только поле адреса, но и выбор оплаты
   modal.render({
     content: orderView.render({
+      payment: appData.order.payment,
       address: appData.order.address || '',
       valid: false,
       errors: getStep1Errors(appData.formErrors),
@@ -211,14 +214,18 @@ events.on('checkout:open-step1', () => {
   });
 });
 
-events.on('order:step-valid', ({ step, valid }: { step: 1 | 2; valid: boolean }) => {
-  if (step === 1) orderView.valid = valid;
-  if (step === 2) contactsView.valid = valid;
-});
+events.on(
+  'order:step-valid',
+  ({ step, valid }: { step: 1 | 2; valid: boolean }) => {
+    if (step === 1) orderView.valid = valid;
+    if (step === 2) contactsView.valid = valid;
+  }
+);
 
 // По ревью: ошибки формы должны отображаться
 events.on('formErrors:changed', ({ errors }: { errors: FormErrors }) => {
   orderView.render({
+    payment: appData.order.payment,
     address: appData.order.address || '',
     valid: orderView.valid,
     errors: getStep1Errors(errors),
@@ -232,9 +239,12 @@ events.on('formErrors:changed', ({ errors }: { errors: FormErrors }) => {
   });
 });
 
-events.on('orderInput:change', ({ field, value }: { field: keyof IOrderForm; value: string }) => {
-  appData.setOrderField(field, value);
-});
+events.on(
+  'orderInput:change',
+  ({ field, value }: { field: keyof IOrderForm; value: string }) => {
+    appData.setOrderField(field, value);
+  }
+);
 
 events.on('order:submit', () => {
   modal.render({
@@ -249,14 +259,16 @@ events.on('order:submit', () => {
 
 events.on('contacts:submit', () => {
   const dto: OrderRequestDTO = appData.toOrderRequest();
+
   api
     .post('/order', dto)
     .then((res: { orderId: string; total?: number }) => {
+      // считаем total ДО очистки модели
+      const total = res.total ?? appData.getTotalBasketPrice();
+
       appData.clearOrderData();
       modal.render({
-        content: successView.render({
-          total: res.total ?? appData.getTotalBasketPrice(),
-        }),
+        content: successView.render({ total }),
       });
     })
     .catch(console.error);

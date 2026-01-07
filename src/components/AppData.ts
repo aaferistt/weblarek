@@ -1,6 +1,5 @@
 import {
   IProduct,
-  IOrder,
   FormErrors,
   IOrderForm,
   IAppData,
@@ -11,19 +10,18 @@ import {
 import { Model } from './base/Model';
 import { IEvents } from './base/Events';
 
-const EMPTY_ORDER: IOrder = {
+// order хранит только данные покупателя (без total/items)
+const EMPTY_ORDER: IOrderForm = {
   payment: 'card' as PaymentMethod,
   address: '',
   email: '',
   phone: '',
-  total: 0,
-  items: [],
 };
 
 export class AppData extends Model<IAppData> implements IAppData {
   catalog: IProduct[] = [];
   basket: IProduct[] = [];
-  order: IOrder = { ...EMPTY_ORDER };
+  order: IOrderForm = { ...EMPTY_ORDER };
   formErrors: FormErrors = {};
   selectedProduct: IProduct | null = null;
 
@@ -35,6 +33,11 @@ export class AppData extends Model<IAppData> implements IAppData {
 
   getTotalBasketPrice(): number {
     return this.basket.reduce((sum, p) => sum + (p.price ?? 0), 0);
+  }
+
+  // по ревью: отдельный метод модели
+  getTotal(): number {
+    return this.getTotalBasketPrice();
   }
 
   getBasketAmount(): number {
@@ -55,7 +58,7 @@ export class AppData extends Model<IAppData> implements IAppData {
 
   private clearBasket(): void {
     this.basket.length = 0;
-    this.emitChanges('cart:cleared');
+
     this.emitChanges('cart:changed', { state: this.getCartState() });
   }
 
@@ -70,6 +73,11 @@ export class AppData extends Model<IAppData> implements IAppData {
       total: this.getTotalBasketPrice(),
       count: this.getBasketAmount(),
     };
+  }
+
+  // по ревью: отдельный метод модели
+  getItems(): string[] {
+    return this.basket.map((p) => p.id);
   }
 
   // ================== КАТАЛОГ ==================
@@ -97,14 +105,7 @@ export class AppData extends Model<IAppData> implements IAppData {
     this.emitChanges('formErrors:changed', { errors: this.formErrors });
   }
 
-  /**
-   * Обновляет ошибки конкретной группы полей,
-   * предварительно очищая старые ошибки этой группы
-   */
-  private updateErrors(
-    keys: (keyof IOrderForm)[],
-    newErrors: FormErrors
-  ): void {
+  private updateErrors(keys: (keyof IOrderForm)[], newErrors: FormErrors): void {
     const next: FormErrors = { ...this.formErrors };
     keys.forEach((key) => delete next[key]);
     Object.assign(next, newErrors);
@@ -113,27 +114,23 @@ export class AppData extends Model<IAppData> implements IAppData {
 
   // ================== ЗАКАЗ / ВАЛИДАЦИЯ ==================
 
-  setOrderField<K extends keyof IOrderForm>(
-    field: K,
-    value: IOrderForm[K]
-  ): void {
-    this.order = { ...this.order, [field]: value } as IOrder;
+  setOrderField<K extends keyof IOrderForm>(field: K, value: IOrderForm[K]): void {
+    this.order = { ...this.order, [field]: value };
 
-    // валидируем оба шага — это безопасно
     this.validateOrder();
     this.validateContacts();
+  }
+
+  // по ревью: отдельный метод модели
+  getOrder(): IOrderForm {
+    return { ...this.order };
   }
 
   validateOrder(): void {
     const errors: FormErrors = {};
 
-    if (!this.order.address) {
-      errors.address = 'Необходимо указать адрес';
-    }
-
-    if (!this.order.payment) {
-      errors.payment = 'Необходимо указать способ оплаты';
-    }
+    if (!this.order.address) errors.address = 'Необходимо указать адрес';
+    if (!this.order.payment) errors.payment = 'Необходимо указать способ оплаты';
 
     this.updateErrors(['address', 'payment'], errors);
 
@@ -144,13 +141,8 @@ export class AppData extends Model<IAppData> implements IAppData {
   validateContacts(): void {
     const errors: FormErrors = {};
 
-    if (!this.order.email) {
-      errors.email = 'Необходимо указать email';
-    }
-
-    if (!this.order.phone) {
-      errors.phone = 'Необходимо указать телефон';
-    }
+    if (!this.order.email) errors.email = 'Необходимо указать email';
+    if (!this.order.phone) errors.phone = 'Необходимо указать телефон';
 
     this.updateErrors(['email', 'phone'], errors);
 
@@ -168,13 +160,15 @@ export class AppData extends Model<IAppData> implements IAppData {
   // ================== DTO ДЛЯ API ==================
 
   toOrderRequest(): OrderRequestDTO {
+    const order = this.getOrder();
+
     return {
       // по ревью: ТОЛЬКО массив id
-      items: this.basket.map((p) => p.id),
-      payment: this.order.payment,
-      address: this.order.address,
-      email: this.order.email,
-      phone: this.order.phone,
+      items: this.getItems(),
+      payment: order.payment,
+      address: order.address,
+      email: order.email,
+      phone: order.phone,
     };
   }
 }

@@ -29,16 +29,14 @@ export interface IOrderForm {
 
 export type FormErrors = Partial<Record<keyof IOrderForm, string>>;
 
-export interface IOrder extends IOrderForm {
-	total: number;
-	items: string[];
-}
+// По ревью: order не должен дублировать basket/total,
+// поэтому IOrder = только данные покупателя
+export type IOrder = IOrderForm;
 
 export interface IBasketItem {
 	id: string;
 	title: string;
 	price: number;
-	count: number;
 }
 
 // DTO
@@ -53,7 +51,6 @@ export interface ProductDTO {
 	price: number | null;
 }
 
-// Оставляем, если где-то используется, но в OrderRequestDTO больше не нужно
 export interface OrderItemDTO {
 	id: ProductId;
 	quantity: number;
@@ -198,15 +195,20 @@ export interface AppEventMap {
 	'product:open': { productId: ProductId };
 	'product:add': { productId: ProductId; quantity?: number };
 	'product:remove': { productId: ProductId };
+
 	'cart:open': void;
 	'cart:changed': { state: CartState };
-	'cart:cleared': void;
+
 	'checkout:open-step1': void;
 	'checkout:go-step2': void;
 	'checkout:open-step2': void;
 	'checkout:pay': { order: OrderRequestDTO };
+
 	'order:step-valid': { step: 1 | 2; valid: boolean };
 	'order:completed': { orderId: Id<'order'> };
+
+	// выбранный товар (превью)
+	'selectedProduct:changed': {};
 
 	// ошибки формы
 	'formErrors:changed': { errors: FormErrors };
@@ -219,8 +221,14 @@ export interface AppEventMap {
 }
 
 export interface IEventEmitter<Events = AppEventMap> {
-	on<K extends keyof Events>(event: K, handler: (payload: Events[K]) => void): void;
-	off<K extends keyof Events>(event: K, handler: (payload: Events[K]) => void): void;
+	on<K extends keyof Events>(
+		event: K,
+		handler: (payload: Events[K]) => void
+	): void;
+	off<K extends keyof Events>(
+		event: K,
+		handler: (payload: Events[K]) => void
+	): void;
 	emit<K extends keyof Events>(event: K, payload: Events[K]): void;
 }
 
@@ -248,15 +256,31 @@ export interface IAppPresenterConstructor {
 export interface IAppData {
 	catalog: IProduct[];
 	basket: IProduct[];
+
+	// order = только данные покупателя
 	order: IOrder;
+
 	formErrors: FormErrors;
+
 	getTotalBasketPrice(): number;
+	getTotal(): number;
+	getItems(): string[];
+	getOrder(): IOrderForm;
+
 	addToBasket(product: IProduct): void;
 	deleteFromBasket(product: IProduct): void;
 	getBasketAmount(): number;
+
 	setProducts(items: IProduct[]): void;
+
+	setSelectedProduct(product: IProduct | null): void;
+	getSelectedProduct(): IProduct | null;
+
 	setOrderField(field: keyof IOrderForm, value: string): void;
 	validateContacts(): void;
 	validateOrder(): void;
+
+	toOrderRequest(): OrderRequestDTO;
+
 	clearOrderData(): void;
 }
